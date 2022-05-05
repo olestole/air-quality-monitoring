@@ -1,0 +1,6 @@
+{
+    "port": "/dev/tty.usbserial-0001",
+    "configuration": "CPUFreq=240,FlashSize=4M,PSRAM=enabled,PartitionScheme=default,FlashMode=qio,FlashFreq=80,UploadSpeed=115200,DebugLevel=none",
+    "board": "esp32:esp32:esp32wroverkit",
+    "sketch": "monitoring.ino"
+}
