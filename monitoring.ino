@@ -1,7 +1,7 @@
-#include <string>
 #include "WiFi.h"
 #include <DHT.h>
 #include <PubSubClient.h>
+#include <string>
 
 // --- CONSTANTS ---
 #define PIN_DHT 12
@@ -10,23 +10,19 @@
 const char *SSID = "GUEST-FASTWEB-B37487";
 const char *PASS = "zPxg9ax5nV";
 
-const char *IP_MQTT_SERVER = "130.136.2.70";
-const char *MQTT_USER = "iot2020";
-const char *MQTT_PASSWD = "mqtt2020*";
+const char *IP_MQTT_SERVER = "35.177.125.244";
+const char *MQTT_USER = "mosquitto";
+const char *MQTT_PASSWD = "mosquitto";
+// const int MQTT_PORT = 1883;
 
-const char *TOPIC_0 = "sensor/temp";
-const char *TOPIC_1 = "sensor/hum";
+const char *TOPIC_TEMP = "sensor/temp";
+const char *TOPIC_HUM = "sensor/hum";
+const char *TOPIC_RSS = "sensor/rss";
+const char *TOPIC_AQI = "sensor/aqi";
+const char *TOPIC_BOARD_ID = "sensor/board_id";
+const char *TOPIC_GPS = "sensor/gps";
 
-// --- VARIABLES ---
-
-PubSubClient clientMQTT;
-WiFiClient clientWiFi;
-
-DHT dht(PIN_DHT, DHT22);
-
-float tempValue;
-float humValue;
-boolean resultMQTT;
+enum DATA_TYPE { TEMP = 1, HUM, RSS, AQI, BOARD_ID, GPS };
 
 // --- STRUCTS ---
 
@@ -42,29 +38,19 @@ struct BoardData {
   std::string chipModel;
 };
 
+// --- VARIABLES ---
+
+PubSubClient clientMQTT;
+WiFiClient clientWiFi;
+
+DHT dht(PIN_DHT, DHT22);
+
+float tempValue;
+float humValue;
+boolean resultMQTT;
+struct BoardData board_data;
+
 // --- FUNCTIONS ---
-
-struct BoardData chip_info() {
-  struct BoardData board_data;
-  
-  uint32_t chipId = 0;
-  for (int i = 0; i < 17; i = i + 8) {
-    chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
-  }
-
-  board_data.chipId = chipId;
-  board_data.cores = ESP.getChipCores();
-  board_data.chipModel = ESP.getChipModel();
-  board_data.chipRevision = ESP.getChipRevision();
-
-  Serial.printf("ESP32 Chip model = %s Rev %d\n", board_data.chipModel,
-                board_data.chipRevision);
-  Serial.printf("This chip has %d cores\n", board_data.cores);
-  Serial.print("Chip ID: ");
-  Serial.println(board_data.chipId);
-
-  return board_data;
-}
 
 void setup_mqtt() {
   clientMQTT.setClient(clientWiFi);
@@ -84,7 +70,7 @@ void connect_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-boolean publishData(int channel, float value) {
+boolean publishData(DATA_TYPE data_type, float value) {
   bool result = false;
   boolean connected = clientMQTT.connected();
 
@@ -93,14 +79,34 @@ boolean publishData(int channel, float value) {
   if (connected) {
     String message = String(value);
     const char *payload = message.c_str();
-    if (channel == 0)
-      result = clientMQTT.publish(TOPIC_0, payload);
-    else
-      result = clientMQTT.publish(TOPIC_1, payload);
+
+    switch (data_type) {
+    case TEMP:
+      result = clientMQTT.publish(TOPIC_TEMP, payload);
+      break;
+    case HUM:
+      result = clientMQTT.publish(TOPIC_HUM, payload);
+      break;
+    case RSS:
+      result = clientMQTT.publish(TOPIC_RSS, payload);
+      break;
+    case AQI:
+      result = clientMQTT.publish(TOPIC_AQI, payload);
+      break;
+    case BOARD_ID:
+      result = clientMQTT.publish(TOPIC_BOARD_ID, payload);
+      break;
+    case GPS:
+      result = clientMQTT.publish(TOPIC_GPS, payload);
+      break;
+    default:
+      break;
+    }
+
+    log_publish_result(result, payload);
     clientMQTT.loop();
-    return result;
-  } else
-    return (false);
+  }
+  return (false);
 }
 
 struct SensorData read_sensor_data() {
@@ -108,6 +114,38 @@ struct SensorData read_sensor_data() {
   sensor_data.temp = dht.readTemperature();
   sensor_data.hum = dht.readHumidity();
   return sensor_data;
+}
+
+struct BoardData chip_info() {
+  struct BoardData board_data;
+
+  uint32_t chipId = 0;
+  for (int i = 0; i < 17; i = i + 8) {
+    chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
+  }
+
+  board_data.chipId = chipId;
+  board_data.cores = ESP.getChipCores();
+  board_data.chipModel = ESP.getChipModel();
+  board_data.chipRevision = ESP.getChipRevision();
+
+  return board_data;
+}
+
+void log_board_data(struct BoardData board_data) {
+  Serial.printf("ESP32 Chip model = %s Rev %d\n", board_data.chipModel,
+                board_data.chipRevision);
+  Serial.printf("This chip has %d cores\n", board_data.cores);
+  Serial.print("Chip ID: ");
+  Serial.println(board_data.chipId);
+}
+
+void log_publish_result(boolean result, char const *payload) {
+  if (result) {
+    Serial.print("\n[LOG] Data published on the MQTT server: ");
+    Serial.println(payload);
+  } else
+    Serial.println("\n[ERROR] MQTT connection failed");
 }
 
 void log_sensor_data(struct SensorData sensor_data) {
@@ -125,20 +163,17 @@ void setup() {
   delay(2000);
   connect_wifi();
   setup_mqtt();
-  chip_info();
+  board_data = chip_info();
+  log_board_data(board_data);
 }
 
 void loop() {
   struct SensorData sensor_data = read_sensor_data();
   log_sensor_data(sensor_data);
 
-  resultMQTT = publishData(0, tempValue);
-  resultMQTT = publishData(1, humValue);
-
-  if (resultMQTT)
-    Serial.println("[LOG] Data temp published on the MQTT server");
-  else
-    Serial.println("[ERROR] MQTT connection failed");
+  publishData(TEMP, sensor_data.temp);
+  publishData(HUM, sensor_data.hum);
+  publishData(BOARD_ID, board_data.chipId);
 
   delay(DEFAULT_SENSE_FREQUENCY);
 }
