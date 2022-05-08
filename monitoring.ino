@@ -6,6 +6,8 @@
 // --- CONSTANTS ---
 #define PIN_DHT 12
 #define DEFAULT_SENSE_FREQUENCY 2000
+#define DEFAULT_MIN_GAS 1
+#define DEFAULT_MAX_GAS 5
 
 const char *SSID = "GUEST-FASTWEB-B37487";
 const char *PASS = "zPxg9ax5nV";
@@ -19,10 +21,15 @@ const char *TOPIC_TEMP = "sensor/temp";
 const char *TOPIC_HUM = "sensor/hum";
 const char *TOPIC_RSS = "sensor/rss";
 const char *TOPIC_AQI = "sensor/aqi";
-const char *TOPIC_BOARD_ID = "sensor/board_id";
+const char *TOPIC_CHIP_ID = "sensor/chip_id";
 const char *TOPIC_GPS = "sensor/gps";
 
-enum DATA_TYPE { TEMP = 1, HUM, RSS, AQI, BOARD_ID, GPS };
+const char *TOPIC_EXTERNAL = "external/#";
+const char *TOPIC_FREQUENCY = "external/frequency";
+const char *TOPIC_MIN_GAS = "external/min_gas";
+const char *TOPIC_MAX_GAS = "external/max_gas";
+
+enum DATA_TYPE { TEMP = 1, HUM, RSS, AQI, CHIP_ID, GPS };
 
 // --- STRUCTS ---
 
@@ -32,31 +39,84 @@ struct SensorData {
 };
 
 struct BoardData {
-  uint32_t chipId;
-  uint8_t cores;
-  uint8_t chipRevision;
+  int chipId;
+  int cores;
+  int chipRevision;
   std::string chipModel;
 };
 
 // --- VARIABLES ---
 
-PubSubClient clientMQTT;
 WiFiClient clientWiFi;
-
+PubSubClient clientMQTT(clientWiFi);
 DHT dht(PIN_DHT, DHT22);
-
-float tempValue;
-float humValue;
-boolean resultMQTT;
 struct BoardData board_data;
 
+int sample_frequency = DEFAULT_SENSE_FREQUENCY;
+int min_gas = DEFAULT_MIN_GAS;
+int max_gas = DEFAULT_MAX_GAS;
+unsigned long time_now = 0;
+
 // --- FUNCTIONS ---
+
+void receive_callback(char *topic, byte *payload, unsigned int length) {
+  String messageTemp;
+
+  Serial.print("[RECEIVED][");
+  Serial.print(topic);
+  Serial.print("]: ");
+
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+    messageTemp += (char)payload[i];
+  }
+
+  if (strcmp(topic, TOPIC_FREQUENCY) == 0) {
+    sample_frequency = messageTemp.toInt();
+    Serial.print("\nFrequency: ");
+    Serial.println(sample_frequency);
+  } else if (strcmp(topic, TOPIC_MIN_GAS) == 0) {
+    min_gas = messageTemp.toInt();
+    Serial.print("\nMin gas: ");
+    Serial.println(min_gas);
+  } else if (strcmp(topic, TOPIC_MAX_GAS) == 0) {
+    max_gas = messageTemp.toInt();
+    Serial.print("\nMax gas: ");
+    Serial.println(max_gas);
+  }
+}
+
+// TODO: Guarantee this subscription
+// TODO: Add gener
+void subscribe_to_topics() {
+  boolean subscripe_res = clientMQTT.subscribe(TOPIC_EXTERNAL, 1);
+  if (!subscripe_res) {
+    Serial.print("Failed to subscribe to topic: ");
+    Serial.println(TOPIC_EXTERNAL);
+  }
+}
 
 void setup_mqtt() {
   clientMQTT.setClient(clientWiFi);
   clientMQTT.setServer(IP_MQTT_SERVER, 1883);
   clientMQTT.setBufferSize(400);
-  resultMQTT = false;
+  clientMQTT.setCallback(receive_callback);
+  clientMQTT.connect("airQualitySensor", MQTT_USER, MQTT_PASSWD);
+
+  subscribe_to_topics();
+}
+
+void reconnect_mqtt() {
+  Serial.println("[MQTT] Reconnecting...");
+  while (!clientMQTT.connected()) {
+    if (clientMQTT.connect("airQualitySensor", MQTT_USER, MQTT_PASSWD)) {
+      Serial.println("[MQTT] Connected!");
+      subscribe_to_topics();
+    } else {
+      Serial.println("[MQTT] Failed to connect!");
+      delay(2000);
+    }
+  }
 }
 
 void connect_wifi() {
@@ -72,41 +132,36 @@ void connect_wifi() {
 
 boolean publishData(DATA_TYPE data_type, float value) {
   bool result = false;
-  boolean connected = clientMQTT.connected();
 
-  if (!connected)
-    connected = clientMQTT.connect("airQualitySensor", MQTT_USER, MQTT_PASSWD);
-  if (connected) {
-    String message = String(value);
-    const char *payload = message.c_str();
+  String message = String(value);
+  const char *payload = message.c_str();
 
-    switch (data_type) {
-    case TEMP:
-      result = clientMQTT.publish(TOPIC_TEMP, payload);
-      break;
-    case HUM:
-      result = clientMQTT.publish(TOPIC_HUM, payload);
-      break;
-    case RSS:
-      result = clientMQTT.publish(TOPIC_RSS, payload);
-      break;
-    case AQI:
-      result = clientMQTT.publish(TOPIC_AQI, payload);
-      break;
-    case BOARD_ID:
-      result = clientMQTT.publish(TOPIC_BOARD_ID, payload);
-      break;
-    case GPS:
-      result = clientMQTT.publish(TOPIC_GPS, payload);
-      break;
-    default:
-      break;
-    }
-
-    log_publish_result(result, payload);
-    clientMQTT.loop();
+  switch (data_type) {
+  case TEMP:
+    result = clientMQTT.publish(TOPIC_TEMP, payload);
+    break;
+  case HUM:
+    result = clientMQTT.publish(TOPIC_HUM, payload);
+    break;
+  case RSS:
+    result = clientMQTT.publish(TOPIC_RSS, payload);
+    break;
+  case AQI:
+    result = clientMQTT.publish(TOPIC_AQI, payload);
+    break;
+  case CHIP_ID:
+    result = clientMQTT.publish(TOPIC_CHIP_ID, payload);
+    break;
+  case GPS:
+    result = clientMQTT.publish(TOPIC_GPS, payload);
+    break;
+  default:
+    break;
   }
-  return (false);
+
+  log_publish_result(result, payload);
+  clientMQTT.loop();
+  return result;
 }
 
 struct SensorData read_sensor_data() {
@@ -116,10 +171,15 @@ struct SensorData read_sensor_data() {
   return sensor_data;
 }
 
+long read_rssi() {
+  // The current Received Signal Strength in dBm (RSSI)
+  return WiFi.RSSI();
+}
+
 struct BoardData chip_info() {
   struct BoardData board_data;
 
-  uint32_t chipId = 0;
+  int chipId = 0;
   for (int i = 0; i < 17; i = i + 8) {
     chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
   }
@@ -142,7 +202,7 @@ void log_board_data(struct BoardData board_data) {
 
 void log_publish_result(boolean result, char const *payload) {
   if (result) {
-    Serial.print("\n[LOG] Data published on the MQTT server: ");
+    Serial.print("[LOG] Data published on the MQTT server: ");
     Serial.println(payload);
   } else
     Serial.println("\n[ERROR] MQTT connection failed");
@@ -168,12 +228,21 @@ void setup() {
 }
 
 void loop() {
-  struct SensorData sensor_data = read_sensor_data();
-  log_sensor_data(sensor_data);
+  if (millis() >= time_now + sample_frequency) {
+    struct SensorData sensor_data = read_sensor_data();
+    long rssi = read_rssi();
 
-  publishData(TEMP, sensor_data.temp);
-  publishData(HUM, sensor_data.hum);
-  publishData(BOARD_ID, board_data.chipId);
+    if (clientMQTT.connected()) {
+      publishData(TEMP, sensor_data.temp);
+      publishData(HUM, sensor_data.hum);
+      publishData(CHIP_ID, board_data.chipId);
+      publishData(RSS, rssi);
+    } else
+      reconnect_mqtt();
 
-  delay(DEFAULT_SENSE_FREQUENCY);
+    time_now += sample_frequency;
+    Serial.println("-----------------------------------------------------");
+  }
+
+  clientMQTT.loop();
 }
