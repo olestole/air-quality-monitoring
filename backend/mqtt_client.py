@@ -1,8 +1,9 @@
 import paho.mqtt.client as mqtt
+from influx_client import InfluxClient
 
 
 class MQTTClient:
-    def __init__(self, host, port=1883, username="mosquitto", password="mosquitto", keepalive=60):
+    def __init__(self, host, port=1883, username="mosquitto", password="mosquitto", keepalive=60, influx_client: InfluxClient = None):
         self.username = username
         self.password = password
         self.host = host
@@ -17,6 +18,7 @@ class MQTTClient:
             "gps": "sensor/gps",
         }
 
+        self.influx_client = influx_client
         self.client = mqtt.Client()
         self.connect()
 
@@ -24,24 +26,32 @@ class MQTTClient:
         topics = "sensor/#"
 
     def on_connect(self, client, userdata, flags, rc):
-        print("Connected with result code "+str(rc))
+        print("[MQTT] Connected with result code "+str(rc))
         topics = [(topic, 0) for topic in self.topics.values()]
-        print(topics)
         client.subscribe(topics)
 
-    # TODO: Take these values and write them to InfluxDB
     def on_message(self, client, userdata, msg):
-        topic = msg.topic
+        # TODO: Don't know what GPS is
+        topics_float = [self.topics['temp'], self.topics['hum'], self.topics['aqi']]
+        topics_int = [self.topics['board_id'], self.topics['rss']]
+
+        topic: str = msg.topic
+        top_level_topic: str = topic.split("/")[-1]
         payload = str(msg.payload.decode('utf-8'))
 
-        if topic == self.topics['board_id']:
-            print(f"{topic}: {int(float(payload))}")
-        else:
-            print(f"{topic}: {payload}")
+        if topic in topics_float:
+            payload = float(payload)
+        elif topic in topics_int:
+            payload = int(float(payload))
+
+        print(f"[RECEIVED MQTT]: {topic}: {payload}")
+        # Write to InfluxDB
+        self.influx_client.write_point(
+            top_level_topic, {"user": "olestole"}, {'value': payload})
 
     def special_message(self, client, userdata, msg):
         msg = str(msg.payload.decode('utf-8'))
-        print(f"special_message: {msg}")
+        print(f"[RECEIVED MQTT] special_message: {msg}")
 
     def connect(self):
         self.client.on_connect = self.on_connect
