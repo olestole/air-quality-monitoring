@@ -17,12 +17,12 @@ const char *MQTT_USER = "mosquitto";
 const char *MQTT_PASSWD = "mosquitto";
 // const int MQTT_PORT = 1883;
 
-const char *TOPIC_TEMP = "sensor/temp";
-const char *TOPIC_HUM = "sensor/hum";
-const char *TOPIC_RSS = "sensor/rss";
-const char *TOPIC_AQI = "sensor/aqi";
-const char *TOPIC_CHIP_ID = "sensor/chip_id";
-const char *TOPIC_GPS = "sensor/gps";
+const char *TOPIC_TEMP = "temp";
+const char *TOPIC_HUM = "hum";
+const char *TOPIC_RSS = "rss";
+const char *TOPIC_AQI = "aqi";
+const char *TOPIC_CHIP_ID = "chip_id";
+const char *TOPIC_GPS = "gps";
 
 const char *TOPIC_EXTERNAL = "external/#";
 const char *TOPIC_FREQUENCY = "external/frequency";
@@ -119,6 +119,13 @@ void reconnect_mqtt() {
   }
 }
 
+const char* create_topic(std::string sensor, int chip_id, int gps) {
+  std::string topic;
+  topic += std::string("sensor/") + std::to_string(chip_id) + "/" + std::to_string(gps) + "/" + sensor;
+  Serial.println(topic.c_str());
+  return topic.c_str();
+}
+
 void connect_wifi() {
   WiFi.begin(SSID, PASS);
   while (WiFi.status() != WL_CONNECTED) {
@@ -130,30 +137,31 @@ void connect_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-boolean publishData(DATA_TYPE data_type, float value) {
+boolean publishData(DATA_TYPE data_type, float value, int chip_id, int gps) {
   bool result = false;
 
   String message = String(value);
   const char *payload = message.c_str();
 
   switch (data_type) {
+  // TODO: Pass the const TOPIC and not the string
   case TEMP:
-    result = clientMQTT.publish(TOPIC_TEMP, payload);
+    result = clientMQTT.publish(create_topic("temp", chip_id, gps), payload);
     break;
   case HUM:
-    result = clientMQTT.publish(TOPIC_HUM, payload);
+    result = clientMQTT.publish(create_topic("hum", chip_id, gps), payload);
     break;
   case RSS:
-    result = clientMQTT.publish(TOPIC_RSS, payload);
+    result = clientMQTT.publish(create_topic("rss", chip_id, gps), payload);
     break;
   case AQI:
-    result = clientMQTT.publish(TOPIC_AQI, payload);
+    result = clientMQTT.publish(create_topic("aqi", chip_id, gps), payload);
     break;
   case CHIP_ID:
-    result = clientMQTT.publish(TOPIC_CHIP_ID, payload);
+    result = clientMQTT.publish(create_topic("chip_id", chip_id, gps), payload);
     break;
   case GPS:
-    result = clientMQTT.publish(TOPIC_GPS, payload);
+    result = clientMQTT.publish(create_topic("gps", chip_id, gps), payload);
     break;
   default:
     break;
@@ -230,13 +238,14 @@ void setup() {
 void loop() {
   if (millis() >= time_now + sample_frequency) {
     struct SensorData sensor_data = read_sensor_data();
+    struct BoardData board_data = chip_info();
     long rssi = read_rssi();
 
     if (clientMQTT.connected()) {
-      publishData(TEMP, sensor_data.temp);
-      publishData(HUM, sensor_data.hum);
-      publishData(CHIP_ID, board_data.chipId);
-      publishData(RSS, rssi);
+      publishData(TEMP, sensor_data.temp, board_data.chipId, 987);
+      publishData(HUM, sensor_data.hum, board_data.chipId, 987);
+      publishData(CHIP_ID, board_data.chipId, board_data.chipId, 987);
+      publishData(RSS, rssi, board_data.chipId, 987);
     } else
       reconnect_mqtt();
 
