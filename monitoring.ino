@@ -13,7 +13,7 @@
 
 const char *SSID = "GUEST-FASTWEB-B37487";
 const char *PASS = "zPxg9ax5nV";
-const char *BACKEND_SERVER = "http://192.168.78.108:3000";
+const char *BACKEND_SERVER = "http://18.134.158.144:5000";
 
 const char *IP_MQTT_SERVER = "35.177.125.244";
 const char *MQTT_USER = "mosquitto";
@@ -31,6 +31,7 @@ const char *TOPIC_EXTERNAL = "external/#";
 const char *TOPIC_FREQUENCY = "external/frequency";
 const char *TOPIC_MIN_GAS = "external/min_gas";
 const char *TOPIC_MAX_GAS = "external/max_gas";
+const char *TOPIC_CHANGE_PROTOCOL = "external/change_protocol";
 
 enum DATA_TYPE { TEMP = 1, HUM, RSS, AQI, CHIP_ID, GPS };
 
@@ -60,33 +61,34 @@ struct BoardData board_data;
 int sample_frequency = DEFAULT_SENSE_FREQUENCY;
 int min_gas = DEFAULT_MIN_GAS;
 int max_gas = DEFAULT_MAX_GAS;
+int use_mqtt = 1;
 unsigned long time_now = 0;
 
 // --- FUNCTIONS ---
 
-// BUG: There're a lot of bugs with this implementation.
 void publish_http(SensorData sensor_data, int rss, int chip_id, int gps) {
   std::string serverPath;
-  serverPath += std::string(BACKEND_SERVER) + "/" + std::to_string(chip_id) +
-                "/" + std::to_string(gps);
+  serverPath += std::string(BACKEND_SERVER) + "/sensor/" +
+                std::to_string(chip_id) + "/" + std::to_string(gps);
 
-  http_client.begin(wifi_client, serverPath.c_str());
+  http_client.begin(serverPath.c_str());
   http_client.addHeader("Content-Type", "application/json");
 
   std::string json = "{";
   json += "\"temp\":" + std::to_string(sensor_data.temp) + ",";
   json += "\"hum\":" + std::to_string(sensor_data.hum) + ",";
   json += "\"rss\":" + std::to_string(rss) + ",";
-  // json += "\"aqi\":" + std::to_string(sensor_data.aqi) + ",";
-  json += "\"chip_id\":" + std::to_string(board_data.chipId) + ",";
-  // json += "\"cores\":" + std::to_string(board_data.cores) + ",";
-  // json += "\"chip_revision\":" + std::to_string(board_data.chipRevision) + ",";
-  // json += "\"chip_model\":" + board_data.chipModel;
+  json += "\"chip_id\":" + std::to_string(board_data.chipId);
   json += "}";
 
-  int httpResponseCode = http_client.POST("{\"temp\":\"12.34\",\"hum\":\"54.4\",\"rss\":\"-61\",\"chip_id\":\"1294782\"}");
-  Serial.print("HTTP Response code: ");
-  Serial.println(httpResponseCode);
+  int httpResponseCode = http_client.POST(parsed_json.c_str());
+
+  if (httpResponseCode != 200) {
+    Serial.print("[HTTP] Error: ");
+    Serial.println(httpResponseCode);
+  } else {
+    Serial.println("[HTTP] Published sensor-readings");
+  }
 
   http_client.end();
 }
@@ -115,6 +117,17 @@ void receive_callback(char *topic, byte *payload, unsigned int length) {
     max_gas = messageTemp.toInt();
     Serial.print("\nMax gas: ");
     Serial.println(max_gas);
+  } else if (strcmp(topic, TOPIC_CHANGE_PROTOCOL) == 0) {
+    int received = messageTemp.toInt();
+    if (use_mqtt == 1 && received == 0) {
+      use_mqtt = 0;
+      Serial.println("HTTP Enabled");
+    } else if (use_mqtt == 0 && received == 1) {
+      use_mqtt = 1;
+      Serial.println("MQTT enabled");
+    }
+    Serial.print("\nUse MQTT: ");
+    Serial.println(use_mqtt);
   }
 }
 
@@ -155,7 +168,6 @@ const char *create_topic(std::string sensor, int chip_id, int gps) {
   std::string topic;
   topic += std::string("sensor/") + std::to_string(chip_id) + "/" +
            std::to_string(gps) + "/" + sensor;
-  Serial.println(topic.c_str());
   return topic.c_str();
 }
 
@@ -275,12 +287,14 @@ void loop() {
     long rssi = read_rssi();
 
     if (clientMQTT.connected()) {
-      publishData(TEMP, sensor_data.temp, board_data.chipId, 987);
-      publishData(HUM, sensor_data.hum, board_data.chipId, 987);
-      publishData(CHIP_ID, board_data.chipId, board_data.chipId, 987);
-      publishData(RSS, rssi, board_data.chipId, 987);
-
-      // publish_http(sensor_data, rssi, board_data.chipId, 987);
+      if (use_mqtt) {
+        publishData(TEMP, sensor_data.temp, board_data.chipId, 987);
+        publishData(HUM, sensor_data.hum, board_data.chipId, 987);
+        publishData(CHIP_ID, board_data.chipId, board_data.chipId, 987);
+        publishData(RSS, rssi, board_data.chipId, 987);
+      } else {
+        publish_http(sensor_data, rssi, board_data.chipId, 987);
+      }
     } else
       reconnect_mqtt();
 
