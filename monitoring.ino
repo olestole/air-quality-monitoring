@@ -280,7 +280,7 @@ void loop() {
       publishData(CHIP_ID, board_data.chipId, board_data.chipId, 987);
       publishData(RSS, rssi, board_data.chipId, 987);
 
-      publish_http(sensor_data, rssi, board_data.chipId, 987);
+      // publish_http(sensor_data, rssi, board_data.chipId, 987);
     } else
       reconnect_mqtt();
 

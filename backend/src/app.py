@@ -7,17 +7,16 @@ import flask_api
 
 load_dotenv("../.env")
 
+INFLUX_HOST = os.getenv("INFLUX_HOST")
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN")
+INFLUX_BUCKET_NAME = os.getenv("INFLUX_BUCKET_NAME")
+INFLUX_ORG = os.getenv("INFLUX_ORG")
 MQTT_HOST = os.getenv("MQTT_HOST")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 MQTT_PORT = 1883
-INFLUX_BUCKET_NAME = "air-quality"
-INFLUX_ORG = "olestole"
 
-print(MQTT_HOST)
-
-influx_client = InfluxClient(INFLUX_ORG, INFLUX_BUCKET_NAME, INFLUX_TOKEN, host="172.17.0.2")
+influx_client = InfluxClient(INFLUX_ORG, INFLUX_BUCKET_NAME, INFLUX_TOKEN, host=INFLUX_HOST)
 mqtt_client = MQTTClient(MQTT_HOST, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD, influx_client=influx_client)
 
 

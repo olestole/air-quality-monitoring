@@ -1,17 +1,24 @@
-from influx_client import InfluxClient
 import os
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
+from influx_client import InfluxClient
 import utils
 
 load_dotenv(".env")
 
+FLASK_PORT = os.getenv("FLASK_PORT")
+INFLUX_HOST = os.getenv("INFLUX_HOST")
 INFLUX_TOKEN = os.getenv("INFLUX_TOKEN")
-INFLUX_BUCKET_NAME = "air-quality"
-INFLUX_ORG = "olestole"
-influx_client = InfluxClient(INFLUX_ORG, INFLUX_BUCKET_NAME, INFLUX_TOKEN)
+INFLUX_BUCKET_NAME = os.getenv("INFLUX_BUCKET_NAME")
+INFLUX_ORG = os.getenv("INFLUX_ORG")
+influx_client = InfluxClient(INFLUX_ORG, INFLUX_BUCKET_NAME, INFLUX_TOKEN, host=INFLUX_HOST)
 
 app = Flask(__name__)
+
+
+@app.route("/healthz")
+def index():
+    return "OK", 200
 
 
 @app.route('/sensor/<chip_id>/<gps>', methods=['POST'])
@@ -34,5 +41,6 @@ def sensor_reading(chip_id, gps=None):
 
     return data, 200
 
+
 def run():
-    app.run(debug=True, use_reloader=False)
+    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=FLASK_PORT or 5000)
