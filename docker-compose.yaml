@@ -1,0 +1,40 @@
+version: "3"
+
+services:
+  mosquitto:
+    build:
+      context: ./mosquitto
+      dockerfile: Dockerfile
+    env_file: ./mosquitto/.env
+    image: eclipse-mosquitto:latest
+    container_name: eclipse-mosquitto
+    restart: always
+    volumes:
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    ports:
+      - 1883:1883
+  
+  backend:
+    container_name: air-quality-backend
+    build:
+      context: ./backend
+    ports:
+      - 1234:1234
+    env_file:
+      - ./backend/.env
+  
+  influxdb:
+    container_name: influxdb
+    image: influxdb:2.2.0
+    ports:
+      - 8086:8086
+    restart: always
+    volumes:
+      - ./influxdb/data:/influxdb/data
+  
+  grafana:
+    container_name: grafana-vizualizer
+    image: grafana/grafana
+    ports:
+      - 3002:3000
