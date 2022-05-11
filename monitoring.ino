@@ -13,9 +13,9 @@
 
 const char *SSID = "GUEST-FASTWEB-B37487";
 const char *PASS = "zPxg9ax5nV";
-const char *BACKEND_SERVER = "http://18.134.158.144:5000";
+const char *BACKEND_SERVER = "http://18.170.70.157:5000";
 
-const char *IP_MQTT_SERVER = "35.177.125.244";
+const char *IP_MQTT_SERVER = "18.170.70.157";
 const char *MQTT_USER = "mosquitto";
 const char *MQTT_PASSWD = "mosquitto";
 // const int MQTT_PORT = 1883;
@@ -77,11 +77,11 @@ void publish_http(SensorData sensor_data, int rss, int chip_id, int gps) {
   std::string json = "{";
   json += "\"temp\":" + std::to_string(sensor_data.temp) + ",";
   json += "\"hum\":" + std::to_string(sensor_data.hum) + ",";
-  json += "\"rss\":" + std::to_string(rss) + ",";
-  json += "\"chip_id\":" + std::to_string(board_data.chipId);
+  json += "\"rss\":" + std::to_string(rss);
   json += "}";
 
-  int httpResponseCode = http_client.POST(parsed_json.c_str());
+  String parsed_string = json.c_str();
+  int httpResponseCode = http_client.POST(parsed_string);
 
   if (httpResponseCode != 200) {
     Serial.print("[HTTP] Error: ");
@@ -290,7 +290,6 @@ void loop() {
       if (use_mqtt) {
         publishData(TEMP, sensor_data.temp, board_data.chipId, 987);
         publishData(HUM, sensor_data.hum, board_data.chipId, 987);
-        publishData(CHIP_ID, board_data.chipId, board_data.chipId, 987);
         publishData(RSS, rssi, board_data.chipId, 987);
       } else {
         publish_http(sensor_data, rssi, board_data.chipId, 987);
