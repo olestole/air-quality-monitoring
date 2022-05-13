@@ -4,12 +4,13 @@
 #include <HTTPClient.h>
 #include <PubSubClient.h>
 #include <string>
+#include <vector>
 
 // --- CONSTANTS ---
 #define PIN_DHT 12
 #define DEFAULT_SENSE_FREQUENCY 2000
-#define DEFAULT_MIN_GAS 1
-#define DEFAULT_MAX_GAS 5
+#define DEFAULT_MIN_GAS -1
+#define DEFAULT_MAX_GAS 1
 
 const char *SSID = "GUEST-FASTWEB-B37487";
 const char *PASS = "zPxg9ax5nV";
@@ -64,6 +65,7 @@ int max_gas = DEFAULT_MAX_GAS;
 int use_mqtt = 1;
 unsigned long time_now = 0;
 
+std::vector<SensorData> sensor_data_vector;
 // --- FUNCTIONS ---
 
 void publish_http(SensorData sensor_data, int rss, int chip_id, int gps) {
@@ -91,6 +93,63 @@ void publish_http(SensorData sensor_data, int rss, int chip_id, int gps) {
   }
 
   http_client.end();
+}
+
+// An arbitrary computation of AQ based on the temperature and humidity
+float compute_aq(float temp, float hum) {
+  float temp_coef = 0;
+  float hum_coef = 0;
+
+  if (temp >= -20 && temp <= 0) {
+    temp_coef = 0.5;
+  } else if (temp > 0 && temp <= 10) {
+    temp_coef = 0.55;
+  } else if (temp > 10 && temp <= 20) {
+    temp_coef = 0.6;
+  } else if (temp > 20 && temp <= 30) {
+    temp_coef = 0.65;
+  } else if (temp > 30 && temp <= 40) {
+    temp_coef = 0.7;
+  }
+
+  if (hum >= 0 && hum <= 20) {
+    hum_coef = 0.5;
+  } else if (hum > 20 && hum <= 40) {
+    hum_coef = 0.55;
+  } else if (hum > 40 && hum <= 60) {
+    hum_coef = 0.6;
+  } else if (hum > 60 && hum <= 80) {
+    hum_coef = 0.65;
+  } else if (hum > 80 && hum <= 100) {
+    hum_coef = 0.7;
+  }
+
+  return temp_coef * hum_coef * (1 - exp(-0.13 * (temp - 10)));
+}
+
+int compute_aqi(SensorData sensor_data) {
+  sensor_data_vector.push_back(sensor_data);
+
+  if (sensor_data_vector.size() >= 5) {
+    float sum;
+    float mean_aq;
+
+    for (SensorData &elem : sensor_data_vector) {
+      float aq = compute_aq(elem.temp, elem.hum);
+      sum += aq;
+    }
+    mean_aq = sum / 5;
+    sensor_data_vector.erase(sensor_data_vector.begin());
+
+    if (mean_aq >= max_gas) {
+      return 0;
+    } else if (min_gas <= mean_aq && mean_aq <= max_gas) {
+      return 1;
+    } else {
+      return 2;
+    }
+  }
+  return 1;
 }
 
 void receive_callback(char *topic, byte *payload, unsigned int length) {
@@ -131,8 +190,6 @@ void receive_callback(char *topic, byte *payload, unsigned int length) {
   }
 }
 
-// TODO: Guarantee this subscription
-// TODO: Add gener
 void subscribe_to_topics() {
   boolean subscripe_res = clientMQTT.subscribe(TOPIC_EXTERNAL, 1);
   if (!subscripe_res) {
@@ -285,12 +342,14 @@ void loop() {
     struct SensorData sensor_data = read_sensor_data();
     struct BoardData board_data = chip_info();
     long rssi = read_rssi();
+    int aqi = compute_aqi(sensor_data);
 
     if (clientMQTT.connected()) {
       if (use_mqtt) {
         publishData(TEMP, sensor_data.temp, board_data.chipId, 987);
         publishData(HUM, sensor_data.hum, board_data.chipId, 987);
         publishData(RSS, rssi, board_data.chipId, 987);
+        publishData(AQI, aqi, board_data.chipId, 987);
       } else {
         publish_http(sensor_data, rssi, board_data.chipId, 987);
       }

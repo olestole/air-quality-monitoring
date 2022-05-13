@@ -19,8 +19,8 @@ def parse_payload(topic, payload):
     }
 
     # TODO: Don't know what GPS is
-    topics_float = ['temp', 'hum', 'aqi']
-    topics_int = ['chip_id', 'rss']
+    topics_float = ['temp', 'hum']
+    topics_int = ['chip_id', 'rss', 'aqi']
 
     if topic in topics_float:
         payload = float(payload)
