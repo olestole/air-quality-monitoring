@@ -4,6 +4,7 @@ from influx_client import InfluxClient
 from mqtt_client import MQTTClient
 import sys
 import flask_api
+from forecasting import Forecasting
 
 load_dotenv("../.env")
 
@@ -18,7 +19,7 @@ MQTT_PORT = 1883
 
 influx_client = InfluxClient(INFLUX_ORG, INFLUX_BUCKET_NAME, INFLUX_TOKEN, host=INFLUX_HOST)
 mqtt_client = MQTTClient(MQTT_HOST, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD, influx_client=influx_client)
-
+forecasting_client = Forecasting(influx_client)
 
 def run_http_api():
     print("[HTTP API] Starting...")
@@ -30,12 +31,17 @@ def run_mqtt(mqtt_client):
     mqtt_client.connect()
     mqtt_client.start_loop(blocking=False)
 
-
 try:
+    forecasting_client.start()
     run_mqtt(mqtt_client)
     run_http_api()
 
 except (KeyboardInterrupt, SystemExit):
     print("\nExiting...")
     mqtt_client.stop_loop()
+
+finally:
+    print("Exiting...")
+    mqtt_client.stop_loop()
+    forecasting_client.stop()
     sys.exit()

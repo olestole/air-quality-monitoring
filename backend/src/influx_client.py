@@ -30,22 +30,15 @@ class InfluxClient:
         }
 
         point = Point.from_dict(point)
-        self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+        self.write(bucket=self.bucket, record=point)
+
+    def write(self, bucket, record):
+        self.write_api.write(bucket=bucket, org=self.org, record=record)
 
     def query(self, query: str):
-        query1 = f'from(bucket: "{self.bucket}")\
-        |> range(start: -10m)\
-        |> filter(fn: (r) => r._measurement == "tempValue")\
-        |> filter(fn: (r) => r._field == "value")\
-        |> aggregateWindow(10m, fn: mean))'
-
-        query2 = f'from(bucket: "{self.bucket}")\
-        |> range(start: -10m)'
-
-        # Return the table and print the result - NOT needed for the exercise
-        result = self.client.query_api().query(org=self.org, query=query2)
+        result = self.client.query_api().query(org=self.org, query=query)
         results = []
         for table in result:
             for record in table.records:
-                results.append((record.get_value(), record.get_field()))
-        print(results)
+                results.append((record.get_value(), record.get_time()))
+        return result
