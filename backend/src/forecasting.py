@@ -30,16 +30,15 @@ class Forecasting:
 
     def background_job(self):
         print('[BACKGROUND] Running background thread')
-        raw = self.query_data()
-        df = self.process_raw(raw)
-        forecast = self.fit_prophet(df)
-        lines = self.process_forecast(forecast)
-        self.publish_forecast(lines)
+        self.forecast_data("hum")
+        self.forecast_data("temp")
+        self.forecast_data("rss")
+
     
-    def query_data(self):
+    def query_data(self, measurement: str):
         query = 'from(bucket:"air-quality")' \
             ' |> range(start:-48h)'\
-            ' |> filter(fn: (r) => r["_measurement"] == "hum")' \
+            f' |> filter(fn: (r) => r["_measurement"] == "{measurement}")' \
             ' |> filter(fn: (r) => r["_value"] != 0)' \
             ' |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)'
         
@@ -67,9 +66,9 @@ class Forecasting:
         forecast = m.predict(future)
         return forecast
     
-    def process_forecast(self, forecast):
+    def process_forecast(self, forecast, measurement: str):
         print("\n=== processing forecast ===\n")
-        forecast['measurement'] = "hum"
+        forecast['measurement'] = measurement
         cp = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper','measurement']].copy()
         lines = [str(cp["measurement"][d]) 
                 + ",type=forecast" 
@@ -83,6 +82,13 @@ class Forecasting:
     def publish_forecast(self, lines):
         self.influx_client.write(self.forecast_bucket, lines)
         print("\n=== published forecast ===\n")
+    
+    def forecast_data(self, measurement: str):
+        raw = self.query_data(measurement)
+        df = self.process_raw(raw)
+        forecast = self.fit_prophet(df)
+        lines = self.process_forecast(forecast, measurement)
+        self.publish_forecast(lines)
 
     def start(self):
         schedule.every(self.interval).seconds.do(self.background_job)
