@@ -42,3 +42,6 @@ class InfluxClient:
             for record in table.records:
                 results.append((record.get_value(), record.get_time()))
         return result
+
+    def disconnect(self):
+        self.client.close()

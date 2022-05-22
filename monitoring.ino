@@ -12,14 +12,13 @@
 #define DEFAULT_MIN_GAS -1
 #define DEFAULT_MAX_GAS 1
 
-const char *SSID = "GUEST-FASTWEB-B37487";
-const char *PASS = "zPxg9ax5nV";
-const char *BACKEND_SERVER = "http://18.170.70.157:5000";
+const char *SSID = "";
+const char *PASS = "";
+const char *BACKEND_SERVER = "http://:5000";
 
-const char *IP_MQTT_SERVER = "18.170.70.157";
+const char *IP_MQTT_SERVER = "";
 const char *MQTT_USER = "mosquitto";
 const char *MQTT_PASSWD = "mosquitto";
-// const int MQTT_PORT = 1883;
 
 const char *TOPIC_TEMP = "temp";
 const char *TOPIC_HUM = "hum";

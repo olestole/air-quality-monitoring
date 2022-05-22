@@ -7,12 +7,13 @@ import pandas as pd
 from prophet import Prophet
 
 class Forecasting:
-    def __init__(self, influx_client: InfluxClient, interval: int = 1800, prediction_periods: int = 48, forecast_bucket: str = "air-quality-forecast") -> None:
+    def __init__(self, influx_client: InfluxClient, interval: int = 1800, prediction_periods: int = 48, prediction_freq: str = "15T", forecast_bucket: str = "air-quality-forecast") -> None:
         self.influx_client = influx_client
         self.stop_run_continuously = None
         self.interval = interval
         self.prediction_periods = prediction_periods
         self.forecast_bucket = forecast_bucket
+        self.prediction_freq = prediction_freq
     
     def run_continuously(self):
         cease_continuous_run = threading.Event()
@@ -37,7 +38,7 @@ class Forecasting:
     
     def query_data(self, measurement: str):
         query = 'from(bucket:"air-quality")' \
-            ' |> range(start:-48h)'\
+            ' |> range(start:-24h)'\
             f' |> filter(fn: (r) => r["_measurement"] == "{measurement}")' \
             ' |> filter(fn: (r) => r["_value"] != 0)' \
             ' |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)'
@@ -50,24 +51,26 @@ class Forecasting:
         return raw
 
     def process_raw(self, raw):
-        print("\n=== influxdb query into dataframe ===\n")
+        print("=== influxdb query into dataframe ===\n")
         df = pd.DataFrame(raw, columns=['y','ds'], index=None)
         df['ds'] = df['ds'].values.astype('<M8[s]')
+        # BUG: InfluxDB returns time in UTC, but pandas wants it in local time
+        df['ds'] +=  pd.to_timedelta(2, unit='h')
         df['y'] = df['y'].apply(lambda x: round(x, 2))
         df.set_index('ds')
         return df
 
     def fit_prophet(self, df):
-        print("\n=== fitting prophet ===\n")
+        print("=== fitting prophet ===\n")
         m = Prophet()
         m.fit(df)
 
-        future = m.make_future_dataframe(periods = self.prediction_periods, freq="15T")
+        future = m.make_future_dataframe(periods = self.prediction_periods, freq=self.prediction_freq)
         forecast = m.predict(future)
         return forecast
     
     def process_forecast(self, forecast, measurement: str):
-        print("\n=== processing forecast ===\n")
+        print("=== processing forecast ===\n")
         forecast['measurement'] = measurement
         cp = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper','measurement']].copy()
         lines = [str(cp["measurement"][d]) 
@@ -81,7 +84,7 @@ class Forecasting:
     
     def publish_forecast(self, lines):
         self.influx_client.write(self.forecast_bucket, lines)
-        print("\n=== published forecast ===\n")
+        print("=== published forecast ===\n")
     
     def forecast_data(self, measurement: str):
         raw = self.query_data(measurement)
@@ -96,8 +99,11 @@ class Forecasting:
 
     def stop(self):
         self.stop_run_continuously.set()
-
-
-
+    
+    def start_foreground(self):
+        schedule.every(self.interval).seconds.do(self.background_job)
+        while True:
+            schedule.run_pending()
+            time.sleep(self.interval)
 
 

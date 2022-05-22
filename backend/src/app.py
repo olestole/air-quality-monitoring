@@ -19,7 +19,7 @@ MQTT_PORT = 1883
 
 influx_client = InfluxClient(INFLUX_ORG, INFLUX_BUCKET_NAME, INFLUX_TOKEN, host=INFLUX_HOST)
 mqtt_client = MQTTClient(MQTT_HOST, MQTT_PORT, MQTT_USERNAME, MQTT_PASSWORD, influx_client=influx_client)
-forecasting_client = Forecasting(influx_client)
+forecasting_client = Forecasting(influx_client, interval=60, prediction_freq="5S", prediction_periods=12) # Forecast 5min in the future with intervals of 5s
 
 def run_http_api():
     print("[HTTP API] Starting...")
